@@ -78,6 +78,36 @@ with col1:
     - Improve approval rates for creditworthy applicants
     - Data-driven risk assessment replacing manual review
     """)
+    st.markdown("###  Model Selection Results")
+
+    st.info("""
+    **Challenge:** Severe class imbalance (83% non-defaults) made this a difficult prediction task.
+
+    **Finding:** Traditional accuracy metrics are misleading. A model that predicts "No Default"
+    for everyone achieves 83% accuracy but provides zero business value.
+    """)
+
+    # Comparison table
+    results_df = pd.DataFrame({
+        'Model': ['Logistic Regression', 'Random Forest', 'XGBoost'],
+        'Accuracy': ['63%', '68%', '79% '],
+        'Recall (Catch Defaults)': ['63% ', '50%', '16% '],
+        'Business Value': ['Best', 'Medium', 'Poor'],
+        'Recommendation': [' Use', ' Consider', ' Avoid']
+    })
+
+    st.dataframe(results_df, hide_index=True, use_container_width=True)
+
+    st.success("""
+    **Selected Model: Logistic Regression**
+
+    While it has the lowest accuracy, it catches 4x more defaults than XGBoost,
+    resulting in ~$11M less in losses per 10,000 loans.
+
+    Key insight: In imbalanced classification, optimizing for the right metric
+    (Recall for costly minority class) is more important than overall accuracy.
+    """)
+
 
 with col2:
     st.markdown("### Model Performance")
@@ -121,16 +151,6 @@ st.markdown("---")
 
 # Sidebar
 with st.sidebar:
-    st.markdown("##  Navigation")
-    st.markdown("""
-    Use the sidebar to navigate between pages:
-
-    -  **EDA**: Data exploration
-    -  **Model Predictions**: Make predictions
-    -  **Threshold Tuning**: Optimize decisions
-    -  **Explainability**: Understand models
-    """)
-
     st.markdown("---")
 
     st.markdown("##  Quick Stats")
