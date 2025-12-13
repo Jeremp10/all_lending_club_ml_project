@@ -1,5 +1,12 @@
 import streamlit as st
 import pandas as pd
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from src.data_processing import DataLoader
 
 # Page config
 st.set_page_config(
@@ -8,7 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-
+# Custom CSS for professional look
 st.markdown("""
     <style>
     .main-header {
@@ -43,11 +50,11 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("### Explore Data")
+    st.markdown("###  Explore Data")
     st.write("Visualize loan patterns, distributions, and key risk factors")
 
 with col2:
-    st.markdown("### Predict Defaults")
+    st.markdown("###  Predict Defaults")
     st.write("Use ML models to assess loan default probability")
 
 with col3:
@@ -57,7 +64,7 @@ with col3:
 st.markdown("---")
 
 # Project Overview
-st.markdown("## Project Overview")
+st.markdown("##  Project Overview")
 
 col1, col2 = st.columns([2, 1])
 
@@ -78,45 +85,47 @@ with col1:
     - Improve approval rates for creditworthy applicants
     - Data-driven risk assessment replacing manual review
     """)
-    st.markdown("###  Model Selection Results")
-
-    st.info("""
-    **Challenge:** Severe class imbalance (83% non-defaults) made this a difficult prediction task.
-
-    **Finding:** Traditional accuracy metrics are misleading. A model that predicts "No Default"
-    for everyone achieves 83% accuracy but provides zero business value.
-    """)
-
-    # Comparison table
-    results_df = pd.DataFrame({
-        'Model': ['Logistic Regression', 'Random Forest', 'XGBoost'],
-        'Accuracy': ['63%', '68%', '79% '],
-        'Recall (Catch Defaults)': ['63% ', '50%', '16% '],
-        'Business Value': ['Best', 'Medium', 'Poor'],
-        'Recommendation': [' Use', ' Consider', ' Avoid']
-    })
-
-    st.dataframe(results_df, hide_index=True, use_container_width=True)
-
-    st.success("""
-    **Selected Model: Logistic Regression**
-
-    While it has the lowest accuracy, it catches 4x more defaults than XGBoost,
-    resulting in ~$11M less in losses per 10,000 loans.
-
-    Key insight: In imbalanced classification, optimizing for the right metric
-    (Recall for costly minority class) is more important than overall accuracy.
-    """)
-
 
 with col2:
-    st.markdown("### Model Performance")
+    st.markdown("###  Model Performance")
 
-
-    st.metric("Best Model", "XGBoost", "")
-    st.metric("ROC-AUC Score", "0.85", "+0.15 vs baseline")
+    st.metric("Selected Model", "Logistic Regression", "")
+    st.metric("Default Detection", "63%", "Best Recall")
     st.metric("Loans Analyzed", "15,000", "")
     st.metric("Features Used", "30+", "")
+
+st.markdown("---")
+
+# Model Selection Results (Full Width)
+st.markdown("###  Model Selection Results")
+
+st.info("""
+**Challenge:** Severe class imbalance (83% non-defaults) made this a difficult prediction task.
+
+**Finding:** Traditional accuracy metrics are misleading. A model that predicts "No Default"
+for everyone achieves 83% accuracy but provides zero business value.
+""")
+
+# Comparison table
+results_df = pd.DataFrame({
+    'Model': ['Logistic Regression', 'Random Forest', 'XGBoost'],
+    'Accuracy': ['63%', '68%', '79% '],
+    'Recall (Catch Defaults)': ['63% ', '50%', '16% '],
+    'Business Value': ['Best', 'Medium', 'Poor'],
+    'Recommendation': [' Use', ' Consider', ' Avoid']
+})
+
+st.dataframe(results_df, hide_index=True, use_container_width=True)
+
+st.success("""
+**Selected Model: Logistic Regression**
+
+While it has the lowest accuracy, it catches 4x more defaults than XGBoost,
+resulting in ~$11M less in losses per 10,000 loans.
+
+Key insight: In imbalanced classification, optimizing for the right metric
+(Recall for costly minority class) is more important than overall accuracy.
+""")
 
 st.markdown("---")
 
@@ -147,19 +156,44 @@ st.markdown("""
 
 st.markdown("---")
 
-#todo: add a little description here
+
 
 # Sidebar
 with st.sidebar:
+    st.markdown("## Navigation")
+    st.markdown("""
+    Use the sidebar to navigate between pages:
+
+    -  **EDA**: Data exploration
+    -  **Model Predictions**: Make predictions
+    - **Threshold Tuning**: Optimize decisions
+    -  **Explainability**: Understand models
+    """)
+
     st.markdown("---")
 
     st.markdown("##  Quick Stats")
-    st.metric("Dataset Size", "15,000 loans")
-    st.metric("Default Rate", "17%")
-    st.metric("Features", "30+")
+
+    # Load actual stats from data
+    try:
+        data_loader = DataLoader()
+        df = data_loader.load_clean_data()
+
+        if df is not None:
+            stats = data_loader.get_feature_statistics(df)
+
+            st.metric("Dataset Size", f"{stats['total_loans']:,} loans")
+            st.metric("Default Rate", f"{stats['default_rate']:.1%}")
+            st.metric("Avg Loan Amount", f"${stats['avg_loan_amount']:,.0f}")
+            st.metric("Avg FICO Score", f"{stats['avg_fico']:.0f}")
+    except:
+        # Fallback if data can't be loaded
+        st.metric("Dataset Size", "15,000 loans")
+        st.metric("Default Rate", "17%")
+        st.metric("Features", "30+")
 
     st.markdown("---")
     st.markdown("###  Model Metrics")
-    st.success("ROC-AUC: 0.85")
-    st.info("Precision: 0.72")
-    st.warning("Recall: 0.68")
+    st.success("Recall: 63% ")
+    st.info("Precision: 26%")
+    st.warning("Accuracy: 63%")

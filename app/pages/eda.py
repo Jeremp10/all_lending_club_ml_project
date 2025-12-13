@@ -3,6 +3,14 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
+from pathlib import Path
+
+# Add src to path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from src.data_processing import DataLoader
+from src.visualizations import LoanVisualizer
 
 st.set_page_config(page_title="EDA - Loan Default Predictor", layout="wide")
 
@@ -10,20 +18,20 @@ st.set_page_config(page_title="EDA - Loan Default Predictor", layout="wide")
 st.title(" Exploratory Data Analysis")
 st.markdown("Interactive visualization of loan data and default patterns")
 
+# Initialize utilities
+data_loader = DataLoader()
+visualizer = LoanVisualizer()
+
 # Load data
 @st.cache_data
 def load_data():
-    df = pd.read_csv('data/raw_data/cleaned_loan_data.csv')
-
-    # Create binary default column if it doesn't exist
-    if 'default' not in df.columns:
-        df['default'] = df['loan_status'].apply(
-            lambda x: 1 if x == 'Charged Off' else 0
-        )
-
-    return df
+    return data_loader.load_clean_data()
 
 df = load_data()
+
+if df is None:
+    st.error(" Failed to load data. Please check file paths.")
+    st.stop()
 
 # Sidebar filters
 st.sidebar.markdown("##  Data Filters")
@@ -37,7 +45,7 @@ selected_grades = st.sidebar.multiselect(
 )
 
 # Filter data
-df_filtered = df[df['grade'].isin(selected_grades)]
+df_filtered = data_loader.filter_by_grade(df, selected_grades)
 
 st.sidebar.metric("Filtered Loans", f"{len(df_filtered):,}")
 st.sidebar.metric("Default Rate", f"{df_filtered['default'].mean():.1%}")
@@ -95,7 +103,7 @@ with tab1:
         st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
-    st.markdown("## Loan Characteristics")
+    st.markdown("##  Loan Characteristics")
 
     # Loan amount distribution
     col1, col2 = st.columns(2)
@@ -150,7 +158,7 @@ with tab2:
     st.plotly_chart(fig, use_container_width=True)
 
 with tab3:
-    st.markdown("## 👤 Borrower Profile")
+    st.markdown("##  Borrower Profile")
 
     col1, col2 = st.columns(2)
 
@@ -210,7 +218,7 @@ with tab3:
         st.plotly_chart(fig, use_container_width=True)
 
 with tab4:
-    st.markdown("## Default Analysis")
+    st.markdown("##  Default Analysis")
     st.markdown("Compare characteristics of defaults vs non-defaults")
 
     # FICO by default status
@@ -276,7 +284,7 @@ with tab4:
     st.success(" Key Insight: Higher-risk grades (E, F, G) have significantly higher default rates, validating Lending Club's risk classification.")
 
 # Data table at bottom
-with st.expander(" View Raw Data Sample"):
+with st.expander("📋 View Raw Data Sample"):
     st.dataframe(df_filtered.head(100), use_container_width=True)
     st.download_button(
         " Download Filtered Data",
