@@ -1,50 +1,44 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import sys
+from pathlib import Path
 
-st.set_page_config(page_title="Model Predictions", page_icon="🤖", layout="wide")
+# Add src to path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+from src.model_utils import ModelPredictor, interpret_risk, calculate_expected_loss, calculate_business_metrics, get_feature_impact
+from src.visualizations import LoanVisualizer
+
+st.set_page_config(page_title="Model Predictions", layout="wide")
 
 # Title
 st.title(" Loan Default Prediction")
 st.markdown("Enter borrower information to predict default probability")
 
-# Load models and scaler
-@st.cache_resource
-def load_models():
-    """Load trained models and scaler"""
-    try:
-        with open('models/logistic_regression.pkl', 'rb') as f:
-            lr_model = pickle.load(f)
-        with open('models/random_forest.pkl', 'rb') as f:
-            rf_model = pickle.load(f)
-        with open('models/xgboost.pkl', 'rb') as f:
-            xgb_model = pickle.load(f)
-        with open('models/scaler.pkl', 'rb') as f:
-            scaler = pickle.load(f)
-        with open('models/feature_names.pkl', 'rb') as f:
-            feature_names = pickle.load(f)
-
-        return lr_model, rf_model, xgb_model, scaler, feature_names
-    except FileNotFoundError as e:
-        st.error(f"""
-         **Models not found!**
-
-        Please make sure you've saved your trained models by running the modeling notebook
-        and executing the model saving code.
-
-        Error: {e}
-        """)
-        return None, None, None, None, None
+# Initialize utilities
+predictor = ModelPredictor()
+visualizer = LoanVisualizer()
 
 # Load models
-models_loaded = load_models()
-if models_loaded[0] is None:
-    st.stop()
+st.markdown("### Loading Models...")
+models, scaler, feature_names = predictor.load_models()
 
-lr_model, rf_model, xgb_model, scaler, feature_names = models_loaded
+if models is None:
+    st.error("""
+     **Models not found!**
+
+    Please train and save your models first by running the model saving code
+    at the end of your modeling notebook (Notebook 04).
+
+    Required files in `models/` directory:
+    - logistic_regression.pkl
+    - random_forest.pkl
+    - xgboost.pkl
+    - scaler.pkl
+    - feature_names.pkl
+    """)
+    st.stop()
 
 st.success(" Models loaded successfully!")
 
@@ -58,28 +52,29 @@ selected_model = st.sidebar.radio(
 
 # Map selection to model
 model_map = {
-    "Logistic Regression (Recommended)": ("Logistic Regression", lr_model),
-    "Random Forest": ("Random Forest", rf_model),
-    "XGBoost": ("XGBoost", xgb_model)
+    "Logistic Regression (Recommended)": ("logistic_regression", "Logistic Regression"),
+    "Random Forest": ("random_forest", "Random Forest"),
+    "XGBoost": ("xgboost", "XGBoost")
 }
-model_name, model = model_map[selected_model]
+model_key, model_name = model_map[selected_model]
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("###  Model Stats")
-if model_name == "Logistic Regression":
-    st.sidebar.metric("Accuracy", "63%")
-    st.sidebar.metric("Recall", "63%", " Best")
-    st.sidebar.metric("Precision", "26%")
-elif model_name == "Random Forest":
-    st.sidebar.metric("Accuracy", "68%")
-    st.sidebar.metric("Recall", "50%")
-    st.sidebar.metric("Precision", "27%")
-else:  # XGBoost
-    st.sidebar.metric("Accuracy", "79%")
-    st.sidebar.metric("Recall", "16%", " Poor")
-    st.sidebar.metric("Precision", "31%")
+st.sidebar.markdown("###  Model Performance")
 
-# Main content - Two options: Manual Input or Example Cases
+# Get metrics for selected model
+metrics = predictor.get_model_metrics()
+selected_metrics = metrics[model_key]
+
+st.sidebar.metric("Accuracy", f"{selected_metrics['accuracy']:.1%}")
+st.sidebar.metric("Recall", f"{selected_metrics['recall']:.1%}",
+                 " Best" if model_key == 'logistic_regression' else "")
+st.sidebar.metric("Precision", f"{selected_metrics['precision']:.1%}")
+st.sidebar.metric("ROC-AUC", f"{selected_metrics['roc_auc']:.3f}")
+
+if model_key == 'xgboost':
+    st.sidebar.warning(" XGBoost has poor recall (16%) - misses most defaults!")
+
+# Main content - Input method selection
 st.markdown("---")
 input_method = st.radio(
     "Choose input method:",
@@ -87,41 +82,42 @@ input_method = st.radio(
     horizontal=True
 )
 
+# Example cases
+example_cases = {
+    "Low Risk - Grade A": {
+        "loan_amnt": 10000,
+        "int_rate": 7.5,
+        "grade_encoded": 1,
+        "annual_inc": 85000,
+        "dti": 8.5,
+        "fico_range_low": 750,
+        "revol_util": 15.0,
+        "loan_to_income": 0.12
+    },
+    "Medium Risk - Grade C": {
+        "loan_amnt": 15000,
+        "int_rate": 12.0,
+        "grade_encoded": 3,
+        "annual_inc": 55000,
+        "dti": 18.5,
+        "fico_range_low": 690,
+        "revol_util": 45.0,
+        "loan_to_income": 0.27
+    },
+    "High Risk - Grade E": {
+        "loan_amnt": 20000,
+        "int_rate": 18.5,
+        "grade_encoded": 5,
+        "annual_inc": 40000,
+        "dti": 28.0,
+        "fico_range_low": 650,
+        "revol_util": 85.0,
+        "loan_to_income": 0.50
+    }
+}
+
 if input_method == " Example Cases":
     st.markdown("### Pre-loaded Example Borrowers")
-
-    example_cases = {
-        "Low Risk - Grade A": {
-            "loan_amnt": 10000,
-            "int_rate": 7.5,
-            "grade_encoded": 1,  # A
-            "annual_inc": 85000,
-            "dti": 8.5,
-            "fico_range_low": 750,
-            "revol_util": 15.0,
-            "loan_to_income": 0.12
-        },
-        "Medium Risk - Grade C": {
-            "loan_amnt": 15000,
-            "int_rate": 12.0,
-            "grade_encoded": 3,  # C
-            "annual_inc": 55000,
-            "dti": 18.5,
-            "fico_range_low": 690,
-            "revol_util": 45.0,
-            "loan_to_income": 0.27
-        },
-        "High Risk - Grade E": {
-            "loan_amnt": 20000,
-            "int_rate": 18.5,
-            "grade_encoded": 5,  # E
-            "annual_inc": 40000,
-            "dti": 28.0,
-            "fico_range_low": 650,
-            "revol_util": 85.0,
-            "loan_to_income": 0.50
-        }
-    }
 
     selected_case = st.selectbox("Select an example:", list(example_cases.keys()))
     input_data = example_cases[selected_case]
@@ -129,6 +125,7 @@ if input_method == " Example Cases":
     # Display example data
     st.info(f"**Selected: {selected_case}**")
     col1, col2, col3, col4 = st.columns(4)
+
     with col1:
         st.metric("Loan Amount", f"${input_data['loan_amnt']:,.0f}")
         st.metric("Interest Rate", f"{input_data['int_rate']}%")
@@ -224,11 +221,16 @@ else:  # Manual Input
             help="Calculated: Loan Amount / Annual Income"
         )
 
+        # Quick assessment
+        fico_assessment = "Excellent" if fico_range_low >= 740 else "Good" if fico_range_low >= 670 else "Fair"
+        dti_assessment = "Low" if dti < 20 else "Moderate" if dti < 35 else "High"
+        util_assessment = "Good" if revol_util < 30 else "Fair" if revol_util < 70 else "High"
+
         st.info(f"""
         **Quick Assessment:**
-        - FICO {fico_range_low}: {"Excellent" if fico_range_low >= 740 else "Good" if fico_range_low >= 670 else "Fair"}
-        - DTI {dti}%: {"Low" if dti < 20 else "Moderate" if dti < 35 else "High"}
-        - Utilization {revol_util}%: {"Good" if revol_util < 30 else "Fair" if revol_util < 70 else "High"}
+        - FICO {fico_range_low}: {fico_assessment}
+        - DTI {dti}%: {dti_assessment}
+        - Utilization {revol_util}%: {util_assessment}
         """)
 
     # Store manual input
@@ -245,165 +247,167 @@ else:  # Manual Input
 
 # Predict button
 st.markdown("---")
-if st.button(" Predict Default Risk", type="primary", use_container_width=True):
 
-    # Create feature vector matching training data
-    # Note: This is simplified - you'll need to match ALL features from training
-    # Including one-hot encoded columns for purpose, home_ownership, emp_length
+if st.button("🔮 Predict Default Risk", type="primary", use_container_width=True):
 
     st.markdown("###  Prediction Results")
 
-    # For now, using just the numerical features
-    # TODO: Add proper feature engineering with all encoded columns
-
-    # Create base features DataFrame
-    input_df = pd.DataFrame([input_data])
-
-    # Add dummy columns for categorical features (simplified version)
-    # In production, you'd need to match exact feature_names from training
-
-    # Warning about simplified prediction
+    # Warning about simplified features
     st.warning("""
-     **Simplified Prediction Mode**
-
-    This demo uses core features only. Full production model would include:
-    - Loan purpose (debt consolidation, credit card, etc.)
-    - Home ownership status
-    - Employment length
-    - Additional engineered features
+     **Note:** This demo uses 8 core numerical features for prediction.
+    The full production model would include all one-hot encoded categorical variables
+    (loan purpose, home ownership, employment length, etc.).
     """)
 
     try:
-        # Scale features
-        input_scaled = scaler.transform(input_df)
+        # Create feature DataFrame (simplified - just the 8 core features)
+        input_df = pd.DataFrame([input_data])
 
-        # Get prediction
-        prediction = model.predict(input_scaled)[0]
-        prediction_proba = model.predict_proba(input_scaled)[0]
+        # Get prediction from selected model
+        result = predictor.predict(input_df, model_key)
 
-        default_probability = prediction_proba[1]  # Probability of default
+        if result is None:
+            st.error("Prediction failed. Please check model files.")
+            st.stop()
 
-        # Display results
+        default_probability = result['probability']
+        prediction = result['prediction']
+
+        # Display main results
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.markdown("###  Prediction")
             if prediction == 1:
-                st.error("**HIGH RISK - Likely to Default**")
+                st.error("**HIGH RISK**")
+                st.markdown("**Likely to Default**")
             else:
-                st.success("**LOW RISK - Likely to Repay**")
+                st.success("**LOW RISK**")
+                st.markdown("**Likely to Repay**")
 
         with col2:
             st.markdown("###  Default Probability")
             st.metric(
                 "Probability of Default",
                 f"{default_probability:.1%}",
-                delta=f"{default_probability - 0.17:.1%} vs avg",
+                delta=f"{default_probability - 0.17:.1%} vs avg (17%)",
                 delta_color="inverse"
             )
 
         with col3:
             st.markdown("###  Expected Loss")
-            expected_loss = input_data['loan_amnt'] * default_probability
+            expected_loss = calculate_expected_loss(input_data['loan_amnt'], default_probability)
             st.metric(
                 "Expected Loss",
                 f"${expected_loss:,.0f}",
-                help="Loan Amount × Default Probability"
+                help="Loan Amount × Default Probability × (1 - Recovery Rate)"
             )
 
-        # Probability gauge
+        st.markdown("---")
+
+        # Risk gauge
         st.markdown("###  Risk Gauge")
-
-        fig = go.Figure(go.Indicator(
-            mode = "gauge+number+delta",
-            value = default_probability * 100,
-            domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "Default Risk (%)", 'font': {'size': 24}},
-            delta = {'reference': 17, 'suffix': '% vs avg'},
-            gauge = {
-                'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                'bar': {'color': "darkblue"},
-                'bgcolor': "white",
-                'borderwidth': 2,
-                'bordercolor': "gray",
-                'steps': [
-                    {'range': [0, 10], 'color': '#d4edda'},   # Very Low Risk
-                    {'range': [10, 20], 'color': '#fff3cd'},  # Low Risk
-                    {'range': [20, 40], 'color': '#ffe69c'},  # Medium Risk
-                    {'range': [40, 60], 'color': '#f8d7da'},  # High Risk
-                    {'range': [60, 100], 'color': '#f5c6cb'}  # Very High Risk
-                ],
-                'threshold': {
-                    'line': {'color': "red", 'width': 4},
-                    'thickness': 0.75,
-                    'value': 17  # Average default rate
-                }
-            }
-        ))
-
-        fig.update_layout(
-            paper_bgcolor = "white",
-            font = {'color': "darkblue", 'family': "Arial"},
-            height = 400
-        )
-
+        fig = visualizer.risk_gauge(default_probability, avg_rate=0.17)
         st.plotly_chart(fig, use_container_width=True)
 
         # Risk interpretation
-        st.markdown("###  Risk Interpretation")
+        st.markdown("###  Risk Assessment")
 
-        if default_probability < 0.10:
-            risk_level = "Very Low Risk"
-            color = "green"
-            recommendation = " **Approve** - Strong candidate with minimal default risk"
-        elif default_probability < 0.20:
-            risk_level = "Low Risk"
-            color = "blue"
-            recommendation = " **Approve** - Below average default risk"
-        elif default_probability < 0.40:
-            risk_level = "Medium Risk"
-            color = "orange"
-            recommendation = " **Review** - Above average risk, consider terms adjustment"
-        elif default_probability < 0.60:
-            risk_level = "High Risk"
-            color = "red"
-            recommendation = " **Caution** - High default probability, stricter terms required"
+        risk_info = interpret_risk(default_probability)
+
+        col1, col2 = st.columns([1, 2])
+
+        with col1:
+            st.markdown(f"**Risk Level:** {risk_info['emoji']} **{risk_info['level']}**")
+
+        with col2:
+            st.info(risk_info['recommendation'])
+
+        # Business metrics
+        st.markdown("###  Business Analysis")
+
+        business_metrics = calculate_business_metrics(
+            input_data['loan_amnt'],
+            input_data['int_rate'] / 100,  # Convert to decimal
+            default_probability
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Expected Revenue", f"${business_metrics['expected_revenue']:,.0f}")
+        with col2:
+            st.metric("Expected Loss", f"${business_metrics['expected_loss']:,.0f}")
+        with col3:
+            net_value = business_metrics['net_expected_value']
+            st.metric(
+                "Net Expected Value",
+                f"${net_value:,.0f}",
+                delta="Profitable" if net_value > 0 else "Unprofitable"
+            )
+        with col4:
+            st.metric(
+                "Break-Even Prob",
+                f"{business_metrics['break_even_probability']:.1%}",
+                help="Max default probability to remain profitable"
+            )
+
+        if net_value > 0:
+            st.success(f" **Business Recommendation: {business_metrics['recommendation']}** - Positive expected value of ${net_value:,.0f}")
         else:
-            risk_level = "Very High Risk"
-            color = "darkred"
-            recommendation = " **Decline** - Unacceptable default risk"
+            st.error(f" **Business Recommendation: {business_metrics['recommendation']}** - Negative expected value of ${net_value:,.0f}")
 
-        st.markdown(f"**Risk Level:** :{color}[{risk_level}]")
-        st.info(recommendation)
-
-        # Feature contribution (simplified)
+        # Feature impact analysis
         st.markdown("###  Key Risk Factors")
 
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("**Positive Factors (Reduce Risk):**")
-            if fico_range_low >= 740:
-                st.success(f" Excellent FICO score ({fico_range_low})")
-            if dti < 15:
-                st.success(f" Low debt burden ({dti}% DTI)")
-            if revol_util < 30:
-                st.success(f" Low credit utilization ({revol_util}%)")
-            if loan_to_income < 0.20:
-                st.success(f" Affordable loan size ({loan_to_income:.1%} of income)")
+
+            # FICO
+            fico_impact = get_feature_impact(input_data['fico_range_low'], 'fico_range_low')
+            if fico_impact['impact'] == 'positive':
+                st.success(f" {fico_impact['description']} ({input_data['fico_range_low']:.0f})")
+
+            # DTI
+            dti_impact = get_feature_impact(input_data['dti'], 'dti')
+            if dti_impact['impact'] == 'positive':
+                st.success(f" {dti_impact['description']} ({input_data['dti']:.1f}%)")
+
+            # Credit Utilization
+            util_impact = get_feature_impact(input_data['revol_util'], 'revol_util')
+            if util_impact['impact'] == 'positive':
+                st.success(f" {util_impact['description']} ({input_data['revol_util']:.1f}%)")
+
+            # Loan to Income
+            lti_impact = get_feature_impact(input_data['loan_to_income'], 'loan_to_income')
+            if lti_impact['impact'] == 'positive':
+                st.success(f" {lti_impact['description']} ({input_data['loan_to_income']:.1%})")
 
         with col2:
             st.markdown("**Risk Factors (Increase Risk):**")
-            if fico_range_low < 680:
-                st.error(f" Below average FICO ({fico_range_low})")
-            if dti > 25:
-                st.error(f" High debt burden ({dti}% DTI)")
-            if revol_util > 70:
-                st.error(f" High credit utilization ({revol_util}%)")
-            if loan_to_income > 0.35:
-                st.error(f" Large loan relative to income ({loan_to_income:.1%})")
-            if int_rate > 15:
-                st.error(f" High interest rate ({int_rate}%)")
+
+            # FICO
+            if fico_impact['impact'] == 'negative':
+                st.error(f" {fico_impact['description']} ({input_data['fico_range_low']:.0f})")
+
+            # DTI
+            if dti_impact['impact'] == 'negative':
+                st.error(f" {dti_impact['description']} ({input_data['dti']:.1f}%)")
+
+            # Credit Utilization
+            if util_impact['impact'] == 'negative':
+                st.error(f" {util_impact['description']} ({input_data['revol_util']:.1f}%)")
+
+            # Loan to Income
+            if lti_impact['impact'] == 'negative':
+                st.error(f" {lti_impact['description']} ({input_data['loan_to_income']:.1%})")
+
+            # Interest Rate
+            rate_impact = get_feature_impact(input_data['int_rate'], 'int_rate')
+            if rate_impact['impact'] == 'negative':
+                st.error(f" {rate_impact['description']} ({input_data['int_rate']:.1f}%)")
 
     except Exception as e:
         st.error(f"""
@@ -411,64 +415,77 @@ if st.button(" Predict Default Risk", type="primary", use_container_width=True):
 
         {str(e)}
 
-        This might be due to feature mismatch. Make sure:
-        1. Models were trained with same features
-        2. Scaler was saved correctly
-        3. Feature names match training data
-        """)
+        This might be due to:
+        - Feature mismatch between input and training data
+        - Model files corrupted
+        - Scaler not compatible
 
-# Model comparison
+        Please check your model files and try again.
+        """)
+        import traceback
+        with st.expander(" Debug Info"):
+            st.code(traceback.format_exc())
+
+# Model comparison section
 st.markdown("---")
 with st.expander(" Compare All Models"):
     st.markdown("### Model Comparison for This Borrower")
 
-    st.info("Compare predictions across all three models")
+    st.info("See how different models assess this borrower's risk")
 
     try:
         input_df = pd.DataFrame([input_data])
-        input_scaled = scaler.transform(input_df)
 
         # Get predictions from all models
-        lr_prob = lr_model.predict_proba(input_scaled)[0][1]
-        rf_prob = rf_model.predict_proba(input_scaled)[0][1]
-        xgb_prob = xgb_model.predict_proba(input_scaled)[0][1]
+        all_results = predictor.predict_all_models(input_df)
 
-        comparison_df = pd.DataFrame({
-            'Model': ['Logistic Regression', 'Random Forest', 'XGBoost'],
-            'Default Probability': [f"{lr_prob:.1%}", f"{rf_prob:.1%}", f"{xgb_prob:.1%}"],
-            'Prediction': [
-                'Default' if lr_prob >= 0.5 else 'No Default',
-                'Default' if rf_prob >= 0.5 else 'No Default',
-                'Default' if xgb_prob >= 0.5 else 'No Default'
-            ],
-            'Model Recall': ['63%', '50%', '16%']
-        })
+        if all_results:
+            # Create comparison dataframe
+            comparison_data = []
+            for model_key, result in all_results.items():
+                model_metrics = predictor.get_model_metrics()[model_key]
+                comparison_data.append({
+                    'Model': model_metrics['name'],
+                    'Default Probability': f"{result['probability']:.1%}",
+                    'Prediction': 'Default' if result['prediction'] == 1 else 'No Default',
+                    'Model Recall': f"{model_metrics['recall']:.1%}",
+                    'Model Accuracy': f"{model_metrics['accuracy']:.1%}"
+                })
 
-        st.dataframe(comparison_df, hide_index=True, use_container_width=True)
+            comparison_df = pd.DataFrame(comparison_data)
+            st.dataframe(comparison_df, hide_index=True, use_container_width=True)
 
-        # Visual comparison
-        fig = go.Figure(data=[
-            go.Bar(
-                name='Default Probability',
-                x=['Logistic Regression', 'Random Forest', 'XGBoost'],
-                y=[lr_prob * 100, rf_prob * 100, xgb_prob * 100],
-                text=[f"{lr_prob:.1%}", f"{rf_prob:.1%}", f"{xgb_prob:.1%}"],
-                textposition='outside',
-                marker_color=['#1f77b4', '#ff7f0e', '#2ca02c']
-            )
-        ])
+            # Visual comparison
+            st.markdown("### Visual Comparison")
+            fig = visualizer.model_comparison_bar(all_results)
+            st.plotly_chart(fig, use_container_width=True)
 
-        fig.add_hline(y=17, line_dash="dash", line_color="red",
-                     annotation_text="Average Default Rate (17%)")
+            # Analysis
+            probabilities = [r['probability'] for r in all_results.values()]
+            spread = max(probabilities) - min(probabilities)
 
-        fig.update_layout(
-            title="Predicted Default Probability by Model",
-            yaxis_title="Default Probability (%)",
-            showlegend=False,
-            height=400
-        )
+            if spread > 0.20:
+                st.warning(f"""
+                 **High Model Disagreement**: Models differ by {spread:.1%} in their predictions.
 
-        st.plotly_chart(fig, use_container_width=True)
+                This suggests:
+                - Borrower profile is challenging to assess
+                - Some features strongly influence certain models
+                - Consider additional verification or stricter terms
+                """)
+            else:
+                st.success(f" **Models Agree**: All models predict similar risk levels (spread: {spread:.1%})")
 
     except Exception as e:
         st.error(f"Could not compare models: {str(e)}")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+###  Tips for Using This Tool
+
+- **Start with example cases** to understand how different risk profiles are assessed
+- **Compare all models** to see how they differ in their predictions
+- **Focus on business metrics** (Net Expected Value) not just probability
+- **Remember**: This is a simplified demo - production systems would include more features and validation
+""")

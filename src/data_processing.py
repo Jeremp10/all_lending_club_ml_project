@@ -3,7 +3,7 @@
 #import section
 import pandas as pd
 import streamlit as st
-import pathlib as path
+from pathlib import Path
 
 
 class DataLoader:
@@ -16,7 +16,7 @@ class DataLoader:
 
 
     @st.cache_data
-    def loan_clean_data(_self):
+    def load_clean_data(_self):
         """
         Cleaned data loaded with the default column.
         File: data/raw_data/cleaned_loan_data.csv
@@ -116,7 +116,7 @@ class DataLoader:
             st.warning("'grade' column not found in df")
             return df
 
-        return df[df['grad'].isin(grades)].copy()
+        return df[df['grade'].isin(grades)].copy()
 
     def get_available_files(self):
         """
