@@ -160,36 +160,32 @@ def interpret_risk(probability):
         return {
             'level': 'Very Low Risk',
             'color': 'green',
-            'recommendation': '✅ **Approve** - Strong candidate with minimal default risk',
-            'emoji': '🟢'
+            'recommendation': ' **Approve** - Strong candidate with minimal default risk'
+
         }
     elif probability < 0.20:
         return {
             'level': 'Low Risk',
             'color': 'blue',
-            'recommendation': '✅ **Approve** - Below average default risk',
-            'emoji': '🔵'
+            'recommendation': '**Approve** - Below average default risk'
         }
     elif probability < 0.40:
         return {
             'level': 'Medium Risk',
             'color': 'orange',
-            'recommendation': '⚠️ **Review** - Above average risk, consider terms adjustment',
-            'emoji': '🟠'
+            'recommendation': ' **Review** - Above average risk, consider terms adjustment'
         }
     elif probability < 0.60:
         return {
             'level': 'High Risk',
             'color': 'red',
-            'recommendation': '⛔ **Caution** - High default probability, stricter terms required',
-            'emoji': '🔴'
+            'recommendation': ' **Caution** - High default probability, stricter terms required'
         }
     else:
         return {
             'level': 'Very High Risk',
             'color': 'darkred',
-            'recommendation': '❌ **Decline** - Unacceptable default risk',
-            'emoji': '⛔'
+            'recommendation': ' **Decline** - Unacceptable default risk'
         }
 
 
